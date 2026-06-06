@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Prize Invader — Web Arcade Tribute</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <main class="shell">
+    <header>
+      <div>
+        <h1>Prize Invader</h1>
+        <p>A web arcade tribute inspired by early UK skill-with-prizes shooters.</p>
+      </div>
+      <div class="topActions">
+        <button id="startBtn">Start Game</button>
+        <button id="fullscreenBtn" class="secondaryBtn" type="button">Full Screen</button>
+      </div>
+    </header>
+
+    <section class="cabinet">
+      <div id="gameWrap" class="gameWrap">
+        <canvas id="game" width="504" height="296" aria-label="Prize Invader game area"></canvas>
+        <button id="exitFullscreenBtn" class="exitFullscreenBtn" type="button">Exit Full Screen</button>
+      </div>
+      <aside class="panel">
+        <h2>Controls</h2>
+        <p><kbd>←</kbd> <kbd>→</kbd> or touch: move</p>
+        <p><kbd>Space</kbd> / tap: fire</p>
+        <p><kbd>P</kbd>: pause</p>
+        <h2>Prize Ladder</h2>
+        <ol id="ladder"></ol>
+        <h2>Local Leaderboard</h2>
+        <ol id="leaderboard" class="leaderboard"></ol>
+        <button id="clearScoresBtn" class="smallBtn" type="button">Clear Scores</button>
+        <p class="note">No real-money payout. This is a safe demo only. High scores are stored in this browser by default. Wix shared leaderboard instructions are included in the ZIP.</p>
+      </aside>
+    </section>
+  </main>
+  <script src="game.js"></script>
+</body>
+</html>
