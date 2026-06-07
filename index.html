@@ -3,15 +3,15 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
-  <title>Prize Invader — Web Arcade Tribute</title>
+  <title>EZEGET Invader — Web Arcade Game</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
   <main class="shell">
     <header>
       <div>
-        <h1>Prize Invader</h1>
-        <p>A web arcade tribute inspired by early UK skill-with-prizes shooters.</p>
+        <h1>EZEGET Invader</h1>
+        <p>A web arcade challenge with original graphics, sounds and scoring.</p>
       </div>
       <div class="topActions">
         <button id="startBtn" type="button">Start Game</button>
@@ -22,96 +22,46 @@
 
     <section class="cabinet">
       <div id="gameWrap" class="gameWrap">
-        <canvas id="game" width="504" height="296" aria-label="Prize Invader game area"></canvas>
+        <canvas id="game" width="504" height="296" aria-label="EZEGET Invader game area"></canvas>
         <button id="exitFullscreenBtn" class="exitFullscreenBtn" type="button">Exit Full Screen</button>
       </div>
       <aside class="panel">
         <h2>Controls</h2>
-        <p><kbd>←</kbd> <kbd>→</kbd> or touch: move</p>
-        <p><kbd>Space</kbd> / tap: fire</p>
-        <p><kbd>P</kbd>: pause</p>
-        <h2>Prize Ladder</h2>
+        <div class="desktopControls">
+          <p><kbd>←</kbd> <kbd>→</kbd> move launcher</p>
+          <p><kbd>Space</kbd> fire</p>
+          <p><kbd>P</kbd> pause</p>
+        </div>
+        <div class="mobileControls">
+          <p><strong>Move:</strong> touch and drag left/right on the game area.</p>
+          <p><strong>Fire:</strong> tap anywhere on the game area.</p>
+        </div>
+        <h2>Score Ladder</h2>
         <ol id="ladder"></ol>
-        <h2>Leaderboard</h2>
+        <h2>Top 5 Scores</h2>
         <ol id="leaderboard" class="leaderboard"></ol>
-        <button id="clearScoresBtn" class="smallBtn" type="button">Clear Scores</button>
-        <p class="note">No real-money payout. This is a safe demo only. High scores are stored locally unless Wix shared leaderboard mode is enabled.</p>
+        <button id="clearScoresBtn" class="smallBtn" type="button">Clear Local Scores</button>
+        <p class="note">Free game. No real-money prizes or payouts. All graphics and sounds are original code-generated assets.</p>
       </aside>
     </section>
   </main>
+
+  <div id="nameModal" class="modalBackdrop" hidden>
+    <section class="nameModal" role="dialog" aria-modal="true" aria-labelledby="nameModalTitle">
+      <div class="modalAlien" aria-hidden="true">▟▙</div>
+      <h2 id="nameModalTitle">New High Score</h2>
+      <p id="modalScoreText">You made the Top 5.</p>
+      <label for="playerNameInput">Enter your name</label>
+      <div class="nameInputWrap">
+        <input id="playerNameInput" maxlength="12" autocomplete="off" inputmode="text" placeholder="Your name" />
+        <span id="nameCount">0 / 12</span>
+      </div>
+      <p id="nameError" class="nameError">Please enter your real scoreboard name.</p>
+      <button id="submitNameBtn" type="button">Submit Score</button>
+      <button id="cancelNameBtn" class="modalCancel" type="button">Cancel</button>
+    </section>
+  </div>
+
   <script src="game.js"></script>
-  <script>
-    (function () {
-      const byId = id => document.getElementById(id);
-      const stop = e => { if (e && e.cancelable) e.preventDefault(); if (e) e.stopPropagation(); };
-      const onTap = (el, fn) => {
-        if (!el) return;
-        let lastTap = 0;
-        el.addEventListener('touchend', function (e) {
-          stop(e);
-          const now = Date.now();
-          if (now - lastTap < 120) return;
-          lastTap = now;
-          fn(e);
-        }, { passive: false });
-      };
-
-      onTap(byId('startBtn'), function () {
-        try { ensureAudio(); reset(); beep('level'); } catch (err) { byId('startBtn').click(); }
-      });
-
-      onTap(byId('soundBtn'), function () {
-        try {
-          soundEnabled = !soundEnabled;
-          byId('soundBtn').textContent = soundEnabled ? 'Sound On' : 'Sound Off';
-          if (soundEnabled) beep('level');
-        } catch (err) { byId('soundBtn').click(); }
-      });
-
-      onTap(byId('fullscreenBtn'), async function () {
-        try {
-          if (gameWrap.requestFullscreen) await gameWrap.requestFullscreen();
-          else if (gameWrap.webkitRequestFullscreen) gameWrap.webkitRequestFullscreen();
-        } catch (err) { byId('fullscreenBtn').click(); }
-      });
-
-      onTap(byId('exitFullscreenBtn'), async function () {
-        try {
-          if (document.fullscreenElement && document.exitFullscreen) await document.exitFullscreen();
-          else if (document.webkitFullscreenElement && document.webkitExitFullscreen) document.webkitExitFullscreen();
-        } catch (err) { byId('exitFullscreenBtn').click(); }
-      });
-
-      onTap(byId('clearScoresBtn'), function () {
-        byId('clearScoresBtn').click();
-      });
-
-      const gameCanvas = byId('game');
-      function canvasTouchX(e) {
-        const t = e.touches && e.touches[0] ? e.touches[0] : e.changedTouches && e.changedTouches[0];
-        if (!t) return null;
-        const r = gameCanvas.getBoundingClientRect();
-        return ((t.clientX - r.left) / r.width) * W;
-      }
-
-      gameCanvas.addEventListener('touchstart', function (e) {
-        stop(e);
-        const x = canvasTouchX(e);
-        if (x !== null) touchX = x;
-        try { ensureAudio(); if (!state?.running || state.over) reset(); shoot(); } catch (err) {}
-      }, { passive: false });
-
-      gameCanvas.addEventListener('touchmove', function (e) {
-        stop(e);
-        const x = canvasTouchX(e);
-        if (x !== null) touchX = x;
-      }, { passive: false });
-
-      gameCanvas.addEventListener('touchend', function (e) {
-        stop(e);
-        touchX = null;
-      }, { passive: false });
-    })();
-  </script>
 </body>
 </html>
