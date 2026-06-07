@@ -7,14 +7,40 @@ const gameWrap = document.getElementById('gameWrap');
 const ladderEl = document.getElementById('ladder');
 const leaderboardEl = document.getElementById('leaderboard');
 const clearScoresBtn = document.getElementById('clearScoresBtn');
+const soundBtn = document.getElementById('soundBtn');
 
 const W = canvas.width, H = canvas.height;
 const keys = new Set();
 const prizeSteps = [900, 1900, 3300, 5200, 7600, 10500];
-const SCORE_KEY = 'prizeInvaderHighScores.v5';
+const SCORE_KEY = 'prizeInvaderHighScores.v6';
 const WIX_SHARED_LEADERBOARD = new URLSearchParams(location.search).get('leaderboard') === 'wix';
 let wixScores = null;
 let state, last = 0, touchX = null;
+let audioCtx = null;
+let soundEnabled = true;
+
+function ensureAudio() {
+  if (!soundEnabled) return null;
+  audioCtx ||= new (window.AudioContext || window.webkitAudioContext)();
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  return audioCtx;
+}
+function beep(type='fire') {
+  const ac = ensureAudio(); if (!ac) return;
+  const now = ac.currentTime;
+  const cfg = {
+    fire:[680, .055, 'square', .035], hit:[210, .09, 'sawtooth', .045], shelter:[120, .055, 'triangle', .035],
+    bonus:[880, .18, 'triangle', .07], boom:[70, .28, 'sawtooth', .08], level:[330, .18, 'sine', .055], board:[523, .25, 'sine', .06], wave:[196, .35, 'square', .045]
+  }[type] || [440,.08,'sine',.04];
+  const [freq, dur, wave, gainLevel] = cfg;
+  const osc = ac.createOscillator(); const gain = ac.createGain();
+  osc.type = wave; osc.frequency.setValueAtTime(freq, now);
+  if (type === 'bonus') { osc.frequency.exponentialRampToValueAtTime(freq * 1.8, now + dur); }
+  if (type === 'boom') { osc.frequency.exponentialRampToValueAtTime(35, now + dur); }
+  gain.gain.setValueAtTime(0.0001, now); gain.gain.exponentialRampToValueAtTime(gainLevel, now + .01); gain.gain.exponentialRampToValueAtTime(0.0001, now + dur);
+  osc.connect(gain).connect(ac.destination); osc.start(now); osc.stop(now + dur + .03);
+}
+
 if (!CanvasRenderingContext2D.prototype.roundRect) {
   CanvasRenderingContext2D.prototype.roundRect = function(x, y, w, h, r) {
     r = Math.min(r, w/2, h/2);
@@ -29,7 +55,7 @@ function reset() {
     score: 0, level: 1, lives: 3, combo: 0,
     player: { x: W/2 - 13, y: H - 28, w: 26, h: 9, cooldown: 0 },
     bullets: [], enemyBullets: [], particles: [],
-    swarm: makeSwarm(1), shelters: makeShelters(), dir: 1, stepTimer: 0, bonusShip: null, bonusTimer: 2.5 + Math.random() * 5, highScoreSaved: false,
+    swarm: makeSwarm(1), shelters: makeShelters(), dir: 1, stepTimer: 0, bonusShip: null, bonusSquad: [], bonusTimer: 2.5 + Math.random() * 5, nextBonusWave: 22 + Math.random() * 18, highScoreSaved: false,
     message: 'CLEAR WAVES TO CLIMB THE LADDER'
   };
   updateLadder();
@@ -82,7 +108,33 @@ function renderLeaderboard() {
     leaderboardEl.innerHTML = '<li class="empty">No scores yet</li>';
     return;
   }
-  leaderboardEl.innerHTML = scores.map(row => `<li><span>${escapeHtml(row.name)}</span><strong>${row.score}</strong></li>`).join('');
+
+  leaderboardEl.innerHTML = scores.map((row, index) => {
+    const name = escapeHtml(row.name || row.title || 'PLAYER');
+    const score = Number(row.score || 0).toLocaleString('en-GB');
+    const level = Number(row.level || 0);
+    const when = escapeHtml(formatScoreDate(row.when));
+    return `
+      <li class="scoreRow">
+        <span class="scoreRank">${index + 1}</span>
+        <span class="scoreName">${name}</span>
+        <strong class="scoreValue">${score}</strong>
+        <span class="scoreMeta">L${level}${when ? ' · ' + when : ''}</span>
+      </li>`;
+  }).join('');
+}
+
+function formatScoreDate(value) {
+  if (!value) return '';
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleString('en-GB', {
+    day: '2-digit',
+    month: '2-digit',
+    year: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit'
+  });
 }
 
 function escapeHtml(value) {
@@ -98,6 +150,7 @@ function maybeSaveHighScore() {
   scores.push({ name, score: state.score, level: state.level, when: new Date().toISOString() });
   scores.sort((a, b) => b.score - a.score);
   saveScores(scores);
+  beep('board');
   renderLeaderboard();
 }
 
@@ -108,6 +161,7 @@ function addBurst(x,y,n=8){ for(let i=0;i<n;i++) state.particles.push({x,y,vx:(M
 function shoot() {
   if (state.player.cooldown <= 0) {
     state.bullets.push({ x: state.player.x + state.player.w/2 - 1, y: state.player.y - 7, w: 2, h: 8, vy: -210 });
+    beep('fire');
     state.player.cooldown = .40;
   }
 }
@@ -132,7 +186,7 @@ function update(dt) {
     const shelter = state.shelters.find(h => h.hp > 0 && rects(b, h));
     if (shelter) {
       shelter.hp--;
-      addBurst(b.x, b.y, 5);
+      addBurst(b.x, b.y, 5); beep('shelter');
       if (state.bullets.includes(b)) b.y = -999; else b.y = H + 999;
     }
   }
@@ -157,7 +211,7 @@ function update(dt) {
   for (const b of state.bullets) {
     const hit = state.swarm.find(e => rects(b,e));
     if (hit) {
-      b.y = -999; hit.hp--; addBurst(hit.x+10, hit.y+6, 7);
+      b.y = -999; hit.hp--; addBurst(hit.x+10, hit.y+6, 7); beep('hit');
       if (hit.hp <= 0) {
         state.swarm.splice(state.swarm.indexOf(hit),1);
         state.combo++; state.score += 25 + hit.kind * 8 + Math.min(65, state.combo*4);
@@ -174,7 +228,7 @@ function update(dt) {
 
   if (state.swarm.length === 0) {
     state.level++; state.combo = 0; state.message = `LEVEL ${state.level}: FASTER SWARM`;
-    state.swarm = makeSwarm(state.level);
+    state.swarm = makeSwarm(state.level); beep('level');
   }
 
   state.particles.forEach(q => { q.x += q.vx*dt; q.y += q.vy*dt; q.life -= dt; });
@@ -182,6 +236,7 @@ function update(dt) {
 }
 
 function loseLife(force=false) {
+  beep('boom');
   state.lives--; state.combo = 0; addBurst(state.player.x+13, state.player.y+5, 20);
   state.enemyBullets = []; state.bullets = [];
   state.player.x = W/2-13;
@@ -191,65 +246,103 @@ function loseLife(force=false) {
 
 
 function updateBonusShip(dt) {
+  state.nextBonusWave -= dt;
+  if (state.nextBonusWave <= 0 && !state.bonusShip && state.bonusSquad.length === 0) {
+    launchBonusWave();
+  }
+
   state.bonusTimer -= dt;
-  if (!state.bonusShip && state.bonusTimer <= 0) {
-    const fromLeft = Math.random() < .5;
-    state.bonusShip = {
-      x: fromLeft ? -36 : W + 36,
-      y: 23 + Math.random() * 24,
-      w: 32,
-      h: 10,
-      vx: (fromLeft ? 1 : -1) * (82 + Math.random() * 54 + state.level * 4),
-      wobble: Math.random() * Math.PI * 2,
-      distractFlash: 0,
-      type: chooseBonusVisitor()
-    };
+  if (!state.bonusShip && state.bonusSquad.length === 0 && state.bonusTimer <= 0) {
+    state.bonusShip = makeBonusVisitor(chooseBonusVisitor(), Math.random() < .5, false, 0);
     state.message = bonusVisitorLabel(state.bonusShip.type) + ' — CENTRE HIT SCORES BIG';
   }
-  const ship = state.bonusShip;
-  if (!ship) return;
-  ship.x += ship.vx * dt;
-  ship.wobble += dt * 8;
-  ship.distractFlash += dt;
-  if (ship.x < -70 || ship.x > W + 70) {
+
+  const visitors = [];
+  if (state.bonusShip) visitors.push(state.bonusShip);
+  visitors.push(...state.bonusSquad);
+
+  for (const ship of visitors) {
+    ship.x += ship.vx * dt;
+    ship.wobble += dt * (ship.wobbleRate || 8);
+    ship.distractFlash += dt;
+    if (ship.type === 'azure') ship.y += Math.sin(ship.wobble * 1.4) * 0.55;
+    if (ship.type === 'amber') ship.vx += Math.sin(ship.wobble * .9) * 5 * dt;
+  }
+
+  state.bonusSquad = state.bonusSquad.filter(ship => ship.x > -120 && ship.x < W + 120);
+  if (state.bonusShip && (state.bonusShip.x < -90 || state.bonusShip.x > W + 90)) {
     state.bonusShip = null;
     state.bonusTimer = 4 + Math.random() * 8;
-    return;
   }
+  if (state.bonusSquad.length === 0 && state.message === 'BONUS INVASION — HIT ALL FOUR PHANTOMS') {
+    state.nextBonusWave = 28 + Math.random() * 22;
+    state.bonusTimer = 5 + Math.random() * 8;
+  }
+
   for (const b of state.bullets) {
-    if (!rects(b, ship)) continue;
+    const all = (state.bonusShip ? [state.bonusShip] : []).concat(state.bonusSquad);
+    const ship = all.find(v => rects(b, v));
+    if (!ship) continue;
     const bulletCentre = b.x + b.w / 2;
     const shipCentre = ship.x + ship.w / 2;
     const distance = Math.abs(bulletCentre - shipCentre);
     const centreFactor = clamp(1 - distance / (ship.w / 2), 0, 1);
-    const base = 120 + state.level * 15;
-    const bonus = Math.round(base + centreFactor * 380);
+    const base = ship.base || (120 + state.level * 15);
+    const bonus = Math.round(base + centreFactor * (ship.centreBonus || 420));
     state.score += bonus;
-    state.combo += 2;
-    state.message = centreFactor > .72 ? `DIRECT CENTRE BONUS +${bonus}` : `BONUS SHIP +${bonus}`;
+    state.combo += ship.wave ? 3 : 2;
+    state.message = centreFactor > .72 ? `DIRECT CENTRE BONUS +${bonus}` : `${bonusVisitorLabel(ship.type)} +${bonus}`;
     b.y = -999;
-    addBurst(ship.x + ship.w / 2, ship.y + ship.h / 2, 18);
-    state.bonusShip = null;
-    state.bonusTimer = 5 + Math.random() * 9;
+    beep('bonus');
+    addBurst(ship.x + ship.w / 2, ship.y + ship.h / 2, ship.wave ? 28 : 18);
+    if (state.bonusShip === ship) { state.bonusShip = null; state.bonusTimer = 5 + Math.random() * 9; }
+    state.bonusSquad = state.bonusSquad.filter(v => v !== ship);
     updateLadder();
     break;
   }
 }
 
+function makeBonusVisitor(type, fromLeft, wave=false, offset=0) {
+  const size = wave || type !== 'saucer' ? 36 : 32;
+  const baseSpeed = type === 'crimson' ? 150 : type === 'azure' ? 122 : type === 'rose' ? 104 : type === 'amber' ? 92 : 82;
+  return {
+    x: fromLeft ? -60 - offset : W + 60 + offset,
+    y: wave ? 22 + offset * .04 : 23 + Math.random() * 24,
+    w: type === 'saucer' ? 36 : size,
+    h: type === 'saucer' ? 13 : 28,
+    vx: (fromLeft ? 1 : -1) * (baseSpeed + Math.random() * 34 + state.level * 4),
+    wobble: Math.random() * Math.PI * 2,
+    wobbleRate: type === 'amber' ? 12 : type === 'rose' ? 7 : 9,
+    distractFlash: 0,
+    type, wave,
+    base: type === 'azure' ? 260 : type === 'crimson' ? 220 : type === 'rose' ? 190 : type === 'amber' ? 160 : type === 'chomper' ? 180 : 140,
+    centreBonus: type === 'azure' ? 700 : type === 'crimson' ? 620 : type === 'rose' ? 520 : type === 'amber' ? 440 : type === 'chomper' ? 500 : 420
+  };
+}
+
+function launchBonusWave() {
+  const fromLeft = Math.random() < .5;
+  const types = ['crimson', 'rose', 'azure', 'amber'];
+  state.bonusSquad = types.map((type, i) => makeBonusVisitor(type, fromLeft, true, i * 52));
+  state.message = 'BONUS INVASION — HIT ALL FOUR PHANTOMS';
+  beep('wave');
+}
+
 function chooseBonusVisitor() {
   const roll = Math.random();
-  if (roll < .45) return 'saucer';
-  if (roll < .72) return 'chomper';
-  return 'spirit';
+  if (roll < .34) return 'saucer';
+  if (roll < .55) return 'chomper';
+  return ['crimson','rose','azure','amber'][Math.floor(Math.random()*4)];
 }
 
 function bonusVisitorLabel(type) {
-  return type === 'chomper' ? 'BONUS CHOMPER' : type === 'spirit' ? 'BONUS SPIRIT' : 'BONUS SHIP';
+  const labels = { chomper:'BONUS CHOMPER', crimson:'CRIMSON PHANTOM', rose:'ROSE SPECTRE', azure:'AZURE WISP', amber:'AMBER SHADE', spirit:'AZURE WISP' };
+  return labels[type] || 'BONUS SHIP';
 }
 
 function drawBonusShip(ship) {
   if (ship.type === 'chomper') return drawChomperVisitor(ship);
-  if (ship.type === 'spirit') return drawSpiritVisitor(ship);
+  if (['crimson','rose','azure','amber','spirit'].includes(ship.type)) return drawSpiritVisitor(ship);
   return drawSaucerVisitor(ship);
 }
 
@@ -310,9 +403,11 @@ function drawSpiritVisitor(ship) {
   ctx.translate(cx, cy);
   ctx.scale(ship.vx > 0 ? 1 : -1, 1);
   const pulse = .55 + Math.abs(Math.sin(ship.distractFlash * 14)) * .35;
-  bonusGlow(pulse, 'rgba(56,189,248,ALPHA)', 'rgba(56,189,248,0)');
-  const grad = ctx.createLinearGradient(0, -16, 0, 16);
-  grad.addColorStop(0, '#e0f2fe'); grad.addColorStop(.2, '#38bdf8'); grad.addColorStop(1, '#075985');
+  const ghostPalettes = { crimson:['rgba(248,113,113,ALPHA)','rgba(248,113,113,0)','#fee2e2','#ef4444','#7f1d1d'], rose:['rgba(244,114,182,ALPHA)','rgba(244,114,182,0)','#fce7f3','#ec4899','#831843'], azure:['rgba(56,189,248,ALPHA)','rgba(56,189,248,0)','#e0f2fe','#38bdf8','#075985'], amber:['rgba(251,146,60,ALPHA)','rgba(251,146,60,0)','#ffedd5','#f97316','#7c2d12'], spirit:['rgba(56,189,248,ALPHA)','rgba(56,189,248,0)','#e0f2fe','#38bdf8','#075985'] };
+  const gp = ghostPalettes[ship.type] || ghostPalettes.azure;
+  bonusGlow(pulse, gp[0], gp[1]);
+  const grad = ctx.createLinearGradient(0, -18, 0, 17);
+  grad.addColorStop(0, gp[2]); grad.addColorStop(.24, gp[3]); grad.addColorStop(1, gp[4]);
   ctx.fillStyle = grad;
   ctx.beginPath();
   ctx.moveTo(-16, 12);
@@ -416,6 +511,7 @@ function render() {
   state.shelters.forEach(drawShelter);
   state.swarm.forEach(drawInvader);
   if (state.bonusShip) drawBonusShip(state.bonusShip);
+  if (state.bonusSquad) state.bonusSquad.forEach(drawBonusShip);
   drawLauncher(state.player);
   ctx.fillStyle = '#eef6ff'; state.bullets.forEach(b=>ctx.fillRect(b.x,b.y,b.w,b.h));
   ctx.fillStyle = '#ff758f'; state.enemyBullets.forEach(b=>ctx.fillRect(b.x,b.y,b.w,b.h));
@@ -432,12 +528,14 @@ function render() {
 
 function loop(ts) { const dt = Math.min(.05, (ts-last)/1000 || 0); last = ts; update(dt); render(); requestAnimationFrame(loop); }
 
-window.addEventListener('keydown', e => { keys.add(e.key); if(e.key === ' ') { if(!state?.running || state.over) reset(); shoot(); } if(e.key.toLowerCase()==='p') state.paused=!state.paused; });
+window.addEventListener('keydown', e => { keys.add(e.key); if(e.key === ' ') { ensureAudio(); if(!state?.running || state.over) reset(); shoot(); } if(e.key.toLowerCase()==='p' && state) state.paused=!state.paused; });
 window.addEventListener('keyup', e => keys.delete(e.key));
-canvas.addEventListener('pointerdown', e => { canvas.setPointerCapture(e.pointerId); touchX = (e.offsetX / canvas.clientWidth) * W; if(!state?.running || state.over) reset(); shoot(); });
+canvas.addEventListener('pointerdown', e => { canvas.setPointerCapture(e.pointerId); touchX = (e.offsetX / canvas.clientWidth) * W; ensureAudio(); if(!state?.running || state.over) reset(); shoot(); });
 canvas.addEventListener('pointermove', e => touchX = (e.offsetX / canvas.clientWidth) * W);
 canvas.addEventListener('pointerup', () => touchX = null);
-startBtn.addEventListener('click', reset);
+startBtn.addEventListener('click', () => { ensureAudio(); reset(); beep('level'); });
+soundBtn.addEventListener('click', () => { soundEnabled = !soundEnabled; soundBtn.textContent = soundEnabled ? 'Sound On' : 'Sound Off'; if (soundEnabled) beep('level'); });
+
 clearScoresBtn.addEventListener('click', () => {
   if (WIX_SHARED_LEADERBOARD) { alert('Shared Wix leaderboard scores should be cleared from the Wix database collection.'); return; }
   if (confirm('Clear all local high scores?')) { localStorage.removeItem(SCORE_KEY); renderLeaderboard(); }
@@ -455,7 +553,11 @@ exitFullscreenBtn.addEventListener('click', async () => {
 window.addEventListener('message', event => {
   const data = event.data || {};
   if (data.type === 'PRIZE_INVADER_SCORES' && Array.isArray(data.scores)) {
-    wixScores = data.scores.filter(x => x && x.name && Number.isFinite(x.score)).sort((a,b)=>b.score-a.score).slice(0,10);
+    wixScores = data.scores
+      .filter(x => x && (x.name || x.title) && Number.isFinite(Number(x.score)))
+      .map(x => ({ name: x.name || x.title || 'PLAYER', score: Number(x.score), level: Number(x.level || 0), when: x.when }))
+      .sort((a,b)=>b.score-a.score)
+      .slice(0,10);
     renderLeaderboard();
   }
 });
