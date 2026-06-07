@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
   <title>EZEGET Invader — Web Arcade Game</title>
-  <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="style.css?v=9" />
 </head>
 <body>
   <main class="shell">
@@ -40,7 +40,6 @@
         <ol id="ladder"></ol>
         <h2>Top 5 Scores</h2>
         <ol id="leaderboard" class="leaderboard"></ol>
-        <button id="clearScoresBtn" class="smallBtn" type="button">Clear Local Scores</button>
         <p class="note">Free game. No real-money prizes or payouts. All graphics and sounds are original code-generated assets.</p>
       </aside>
     </section>
@@ -56,13 +55,12 @@
         <input id="playerNameInput" maxlength="12" autocomplete="off" inputmode="text" placeholder="Your name" />
         <span id="nameCount">0 / 12</span>
       </div>
-      <p id="nameError" class="nameError">Please enter your real scoreboard name.</p>
+      <p id="nameError" class="nameError" hidden>Please enter your real scoreboard name.</p>
       <button id="submitNameBtn" type="button">Submit Score</button>
       <button id="cancelNameBtn" class="modalCancel" type="button">Cancel</button>
     </section>
   </div>
 
-  <script src="game.js"></script>
-  <script src="scoreboard-fix.js"></script>
+  <script src="game.js?v=9"></script>
 </body>
 </html>
