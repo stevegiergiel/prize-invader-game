@@ -138,9 +138,16 @@ function formatScoreDate(value) {
 }
 
 function escapeHtml(value) {
-  return String(value).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+  return String(value).replace(/[&<>"']/g, function (ch) {
+    return {
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#039;'
+    }[ch];
+  });
 }
-
 function maybeSaveHighScore() {
   if (state.highScoreSaved || !qualifiesForBoard(state.score)) return;
   state.highScoreSaved = true;
