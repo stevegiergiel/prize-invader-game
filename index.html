@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
   <title>Prize Invader — Web Arcade Tribute</title>
   <link rel="stylesheet" href="style.css" />
 </head>
@@ -14,7 +14,7 @@
         <p>A web arcade tribute inspired by early UK skill-with-prizes shooters.</p>
       </div>
       <div class="topActions">
-        <button id="startBtn">Start Game</button>
+        <button id="startBtn" type="button">Start Game</button>
         <button id="soundBtn" class="secondaryBtn" type="button">Sound On</button>
         <button id="fullscreenBtn" class="secondaryBtn" type="button">Full Screen</button>
       </div>
@@ -40,5 +40,78 @@
     </section>
   </main>
   <script src="game.js"></script>
+  <script>
+    (function () {
+      const byId = id => document.getElementById(id);
+      const stop = e => { if (e && e.cancelable) e.preventDefault(); if (e) e.stopPropagation(); };
+      const onTap = (el, fn) => {
+        if (!el) return;
+        let lastTap = 0;
+        el.addEventListener('touchend', function (e) {
+          stop(e);
+          const now = Date.now();
+          if (now - lastTap < 120) return;
+          lastTap = now;
+          fn(e);
+        }, { passive: false });
+      };
+
+      onTap(byId('startBtn'), function () {
+        try { ensureAudio(); reset(); beep('level'); } catch (err) { byId('startBtn').click(); }
+      });
+
+      onTap(byId('soundBtn'), function () {
+        try {
+          soundEnabled = !soundEnabled;
+          byId('soundBtn').textContent = soundEnabled ? 'Sound On' : 'Sound Off';
+          if (soundEnabled) beep('level');
+        } catch (err) { byId('soundBtn').click(); }
+      });
+
+      onTap(byId('fullscreenBtn'), async function () {
+        try {
+          if (gameWrap.requestFullscreen) await gameWrap.requestFullscreen();
+          else if (gameWrap.webkitRequestFullscreen) gameWrap.webkitRequestFullscreen();
+        } catch (err) { byId('fullscreenBtn').click(); }
+      });
+
+      onTap(byId('exitFullscreenBtn'), async function () {
+        try {
+          if (document.fullscreenElement && document.exitFullscreen) await document.exitFullscreen();
+          else if (document.webkitFullscreenElement && document.webkitExitFullscreen) document.webkitExitFullscreen();
+        } catch (err) { byId('exitFullscreenBtn').click(); }
+      });
+
+      onTap(byId('clearScoresBtn'), function () {
+        byId('clearScoresBtn').click();
+      });
+
+      const gameCanvas = byId('game');
+      function canvasTouchX(e) {
+        const t = e.touches && e.touches[0] ? e.touches[0] : e.changedTouches && e.changedTouches[0];
+        if (!t) return null;
+        const r = gameCanvas.getBoundingClientRect();
+        return ((t.clientX - r.left) / r.width) * W;
+      }
+
+      gameCanvas.addEventListener('touchstart', function (e) {
+        stop(e);
+        const x = canvasTouchX(e);
+        if (x !== null) touchX = x;
+        try { ensureAudio(); if (!state?.running || state.over) reset(); shoot(); } catch (err) {}
+      }, { passive: false });
+
+      gameCanvas.addEventListener('touchmove', function (e) {
+        stop(e);
+        const x = canvasTouchX(e);
+        if (x !== null) touchX = x;
+      }, { passive: false });
+
+      gameCanvas.addEventListener('touchend', function (e) {
+        stop(e);
+        touchX = null;
+      }, { passive: false });
+    })();
+  </script>
 </body>
 </html>
