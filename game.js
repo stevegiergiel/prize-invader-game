@@ -8,11 +8,19 @@ const ladderEl = document.getElementById('ladder');
 const leaderboardEl = document.getElementById('leaderboard');
 const clearScoresBtn = document.getElementById('clearScoresBtn');
 const soundBtn = document.getElementById('soundBtn');
+const nameModal = document.getElementById('nameModal');
+const modalScoreText = document.getElementById('modalScoreText');
+const playerNameInput = document.getElementById('playerNameInput');
+const nameCount = document.getElementById('nameCount');
+const nameError = document.getElementById('nameError');
+const submitNameBtn = document.getElementById('submitNameBtn');
+const cancelNameBtn = document.getElementById('cancelNameBtn');
 
 const W = canvas.width, H = canvas.height;
 const keys = new Set();
 const prizeSteps = [900, 1900, 3300, 5200, 7600, 10500];
-const SCORE_KEY = 'prizeInvaderHighScores.v6';
+const SCORE_KEY = 'prizeInvaderHighScores.v8';
+const MAX_SCORES = 5;
 const WIX_SHARED_LEADERBOARD = new URLSearchParams(location.search).get('leaderboard') === 'wix';
 let wixScores = null;
 let state, last = 0, touchX = null;
@@ -81,14 +89,31 @@ function updateLadder() {
   ladderEl.innerHTML = prizeSteps.map(s => `<li class="${state.score >= s ? 'hit' : ''}">${s} pts — ${state.score >= s ? 'unlocked' : 'locked'}</li>`).join('');
 }
 
+function normaliseScores(scores) {
+  return (Array.isArray(scores) ? scores : [])
+    .filter(x => x && Number.isFinite(Number(x.score)))
+    .map(x => {
+      const name = String(x.name || x.title || 'PLAYER').trim().replace(/\s+/g, ' ').slice(0, 12) || 'PLAYER';
+      return {
+        name,
+        title: name,
+        score: Number(x.score || 0),
+        level: Number(x.level || 0),
+        when: x.when || x._createdDate || new Date().toISOString()
+      };
+    })
+    .sort((a, b) => b.score - a.score)
+    .slice(0, MAX_SCORES);
+}
+
 function loadScores() {
-  if (WIX_SHARED_LEADERBOARD && Array.isArray(wixScores)) return wixScores;
-  try { return JSON.parse(localStorage.getItem(SCORE_KEY) || '[]').filter(x => x && x.name && Number.isFinite(x.score)); }
+  if (WIX_SHARED_LEADERBOARD && Array.isArray(wixScores)) return normaliseScores(wixScores);
+  try { return normaliseScores(JSON.parse(localStorage.getItem(SCORE_KEY) || '[]')); }
   catch { return []; }
 }
 
 function saveScores(scores) {
-  const cleaned = scores.slice(0, 10);
+  const cleaned = normaliseScores(scores);
   if (WIX_SHARED_LEADERBOARD) {
     wixScores = cleaned;
     window.parent?.postMessage({ type: 'PRIZE_INVADER_SAVE_SCORE', scores: cleaned }, '*');
@@ -99,7 +124,7 @@ function saveScores(scores) {
 
 function qualifiesForBoard(score) {
   const scores = loadScores();
-  return score > 0 && (scores.length < 10 || score > scores[scores.length - 1].score);
+  return score > 0 && (scores.length < MAX_SCORES || score > scores[scores.length - 1].score);
 }
 
 function renderLeaderboard() {
@@ -148,14 +173,87 @@ function escapeHtml(value) {
     }[ch];
   });
 }
-function maybeSaveHighScore() {
+
+function updateNameCount() {
+  if (!playerNameInput || !nameCount) return;
+  nameCount.textContent = `${playerNameInput.value.length} / ${playerNameInput.maxLength || 12}`;
+}
+
+function askPlayerName(score) {
+  return new Promise(resolve => {
+    if (!nameModal || !playerNameInput || !submitNameBtn) {
+      resolve('PLAYER');
+      return;
+    }
+
+    modalScoreText.textContent = `You scored ${Number(score || 0).toLocaleString('en-GB')} points and made the Top ${MAX_SCORES}.`;
+    playerNameInput.value = '';
+    if (nameError) nameError.hidden = true;
+    updateNameCount();
+    nameModal.hidden = false;
+
+    setTimeout(() => {
+      playerNameInput.focus();
+      playerNameInput.select();
+    }, 60);
+
+    function cleanup() {
+      submitNameBtn.removeEventListener('click', submit);
+      cancelNameBtn?.removeEventListener('click', cancel);
+      playerNameInput.removeEventListener('keydown', onKey);
+      playerNameInput.removeEventListener('input', onInput);
+    }
+
+    function cleanName() {
+      return String(playerNameInput.value || '')
+        .trim()
+        .replace(/\s+/g, ' ')
+        .slice(0, 12)
+        .toUpperCase();
+    }
+
+    function submit() {
+      const name = cleanName();
+      if (!name) {
+        if (nameError) nameError.hidden = false;
+        playerNameInput.focus();
+        return;
+      }
+      cleanup();
+      nameModal.hidden = true;
+      resolve(name);
+    }
+
+    function cancel() {
+      cleanup();
+      nameModal.hidden = true;
+      resolve(null);
+    }
+
+    function onKey(e) {
+      if (e.key === 'Enter') submit();
+      if (e.key === 'Escape') cancel();
+    }
+
+    function onInput() {
+      if (nameError) nameError.hidden = true;
+      updateNameCount();
+    }
+
+    submitNameBtn.addEventListener('click', submit);
+    cancelNameBtn?.addEventListener('click', cancel);
+    playerNameInput.addEventListener('keydown', onKey);
+    playerNameInput.addEventListener('input', onInput);
+  });
+}
+
+async function maybeSaveHighScore() {
   if (state.highScoreSaved || !qualifiesForBoard(state.score)) return;
   state.highScoreSaved = true;
-  const raw = prompt(`You made the leaderboard with ${state.score} points. Enter your name:`, 'PLAYER');
-  const name = (raw || 'PLAYER').trim().slice(0, 14).replace(/\s+/g, ' ') || 'PLAYER';
+  const name = await askPlayerName(state.score);
+  if (!name) return;
   const scores = loadScores();
-  scores.push({ name, score: state.score, level: state.level, when: new Date().toISOString() });
-  scores.sort((a, b) => b.score - a.score);
+  scores.push({ name, title: name, score: state.score, level: state.level, when: new Date().toISOString() });
   saveScores(scores);
   beep('board');
   renderLeaderboard();
@@ -526,9 +624,9 @@ function render() {
   ctx.fillStyle = '#f9d15c'; ctx.font = '12px monospace'; ctx.textAlign = 'center'; ctx.fillText(state.message, W/2, 34); ctx.textAlign = 'left';
   if (!state.running || state.paused || state.over) {
     ctx.fillStyle = '#0009'; ctx.fillRect(0,0,W,H); ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.font = '18px monospace';
-    ctx.fillText(state.over ? 'GAME OVER' : state.paused ? 'PAUSED' : 'PRIZE INVADER', W/2, H/2-10);
+    ctx.fillText(state.over ? 'GAME OVER' : state.paused ? 'PAUSED' : 'EZEGET INVADER', W/2, H/2-10);
     ctx.font = '11px monospace';
-    ctx.fillText(state.over && qualifiesForBoard(state.score) ? 'Leaderboard score saved' : 'Press Start / Space to play', W/2, H/2+14);
+    ctx.fillText(state.over && state.highScoreSaved ? 'Leaderboard score saved' : 'Press Start / Space to play', W/2, H/2+14);
     ctx.textAlign = 'left';
   }
 }
@@ -560,11 +658,7 @@ exitFullscreenBtn.addEventListener('click', async () => {
 window.addEventListener('message', event => {
   const data = event.data || {};
   if (data.type === 'PRIZE_INVADER_SCORES' && Array.isArray(data.scores)) {
-    wixScores = data.scores
-      .filter(x => x && (x.name || x.title) && Number.isFinite(Number(x.score)))
-      .map(x => ({ name: x.name || x.title || 'PLAYER', score: Number(x.score), level: Number(x.level || 0), when: x.when }))
-      .sort((a,b)=>b.score-a.score)
-      .slice(0,10);
+    wixScores = normaliseScores(data.scores);
     renderLeaderboard();
   }
 });
